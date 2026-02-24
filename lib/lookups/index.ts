@@ -1,0 +1,6 @@
+export { interpolate } from "./interpolate"
+export { getYFactor } from "./yFactor"
+export { getCFactor, isLowVolatility } from "./cFactor"
+export { getFFactorInsulated, getEnvironmentalFactor } from "./fFactor"
+export { normalVentInbreathing, normalVentOutbreathing } from "./normalVentTable"
+export { emergencyVentTableLookup, EMERGENCY_VENT_TABLE_MAX_AREA_M2 } from "./emergencyVentTable"

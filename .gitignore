@@ -32,3 +32,10 @@ yarn-error.log*
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# User custom
+.env
+.env.local
+.env.development
+.env.production
+Book1 1.xlsx
