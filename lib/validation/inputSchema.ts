@@ -2,10 +2,32 @@ import { z } from "zod"
 import { TankConfiguration } from "@/types"
 import { MAX_DESIGN_PRESSURE_KPAG } from "@/lib/constants"
 
+// ─── NaN-tolerant optional helpers ────────────────────────────────────────────
+// Empty number inputs with `valueAsNumber` produce NaN. These helpers coerce
+// NaN → undefined so blank optional fields pass validation.
+
+const nanOptionalPositive = z
+  .number()
+  .positive()
+  .optional()
+  .or(z.nan().transform(() => undefined))
+
+const nanOptional = z
+  .number()
+  .optional()
+  .or(z.nan().transform(() => undefined))
+
+const nanOptionalNonneg = z
+  .number()
+  .nonnegative()
+  .optional()
+  .or(z.nan().transform(() => undefined))
+
 // ─── Stream Schemas ───────────────────────────────────────────────────────────
 
 export const streamSchema = z.object({
-  streamNo: z.string().min(1, "Stream number is required"),
+  streamNo: z.string(),
+  description: z.string().optional(),
   flowrate: z
     .number({ error: "Flowrate must be a number" })
     .nonnegative("Flowrate must be ≥ 0"),
@@ -42,22 +64,10 @@ export const calculationInputSchema = z
     tankConfiguration: z.nativeEnum(TankConfiguration, {
       error: "Invalid tank configuration",
     }),
-    insulationThickness: z
-      .number({ error: "Insulation thickness must be a number" })
-      .positive("Insulation thickness must be > 0")
-      .optional(),
-    insulationConductivity: z
-      .number({ error: "Insulation conductivity must be a number" })
-      .positive("Insulation conductivity must be > 0")
-      .optional(),
-    insideHeatTransferCoeff: z
-      .number({ error: "Inside heat transfer coefficient must be a number" })
-      .positive("Inside heat transfer coefficient must be > 0")
-      .optional(),
-    insulatedSurfaceArea: z
-      .number({ error: "Insulated surface area must be a number" })
-      .nonnegative("Insulated surface area must be ≥ 0")
-      .optional(),
+    insulationThickness: nanOptionalPositive,
+    insulationConductivity: nanOptionalPositive,
+    insideHeatTransferCoeff: nanOptionalPositive,
+    insulatedSurfaceArea: nanOptionalNonneg,
 
     // Fluid properties
     avgStorageTemp: z.number({ error: "Average storage temperature must be a number" }),
@@ -67,34 +77,18 @@ export const calculationInputSchema = z
     flashBoilingPointType: z.enum(["FP", "BP"] as const, {
       error: "Must be 'FP' or 'BP'",
     }),
-    flashBoilingPoint: z
-      .number({ error: "Flash/boiling point must be a number" })
-      .optional(),
-    latentHeat: z
-      .number({ error: "Latent heat must be a number" })
-      .positive("Latent heat must be > 0")
-      .optional(),
-    relievingTemperature: z
-      .number({ error: "Relieving temperature must be a number" })
-      .optional(),
-    molecularMass: z
-      .number({ error: "Molecular mass must be a number" })
-      .positive("Molecular mass must be > 0")
-      .optional(),
+    flashBoilingPoint: nanOptional,
+    latentHeat: nanOptionalPositive,
+    relievingTemperature: nanOptional,
+    molecularMass: nanOptionalPositive,
 
     // Streams
     incomingStreams: z.array(streamSchema).default([]),
     outgoingStreams: z.array(outgoingStreamSchema).default([]),
 
     // Drain system (both required together or both absent)
-    drainLineSize: z
-      .number({ error: "Drain line size must be a number" })
-      .positive("Drain line size must be > 0")
-      .optional(),
-    maxHeightAboveDrain: z
-      .number({ error: "Max height above drain must be a number" })
-      .positive("Max height above drain must be > 0")
-      .optional(),
+    drainLineSize: nanOptionalPositive,
+    maxHeightAboveDrain: nanOptionalPositive,
 
     // Settings
     apiEdition: z.enum(["5TH", "6TH", "7TH"] as const, {

@@ -25,7 +25,7 @@ function Row({ label, value, bold }: RowProps) {
 
 export function NormalVentingResult({ result, apiEdition, drainInbreathing }: Props) {
   const { outbreathing, inbreathing } = result
-  const show7th = apiEdition === "7TH"
+  const showFactors = apiEdition === "6TH" || apiEdition === "7TH"
 
   return (
     <div className="space-y-4">
@@ -38,7 +38,7 @@ export function NormalVentingResult({ result, apiEdition, drainInbreathing }: Pr
           <Row label="Process flowrate" value={outbreathing.processFlowrate} />
           <Row
             label={
-              show7th
+              showFactors
                 ? `Thermal (Y = ${outbreathing.yFactor.toFixed(2)}, R = ${outbreathing.reductionFactor.toFixed(4)})`
                 : "Thermal outbreathing"
             }
@@ -57,7 +57,7 @@ export function NormalVentingResult({ result, apiEdition, drainInbreathing }: Pr
           <Row label="Process flowrate" value={inbreathing.processFlowrate} />
           <Row
             label={
-              show7th
+              showFactors
                 ? `Thermal (C = ${inbreathing.cFactor.toFixed(2)}, R = ${inbreathing.reductionFactor.toFixed(4)})`
                 : "Thermal inbreathing"
             }

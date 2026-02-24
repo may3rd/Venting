@@ -3,10 +3,42 @@
 import { useEffect, useRef } from "react"
 import { useWatch } from "react-hook-form"
 import type { Control } from "react-hook-form"
+import { z } from "zod"
 import { calculationInputSchema } from "@/lib/validation/inputSchema"
 import { computeDerivedGeometry } from "@/lib/calculations/geometry"
 import { useCalculatorStore } from "@/lib/store/calculatorStore"
+import { TankConfiguration } from "@/types"
 import type { CalculationInput, CalculationResult } from "@/types"
+
+// Minimal schema covering only the fields needed for client-side geometry.
+// This allows the Derived Geometry panel to update as soon as tank dimensions
+// are valid, without waiting for fluid properties to be filled in.
+// NaN-tolerant optional number: treats NaN (from valueAsNumber on empty inputs) as absent.
+const nanOptionalPositive = z
+  .number()
+  .positive()
+  .optional()
+  .or(z.nan().transform(() => undefined))
+
+const nanOptionalNonneg = z
+  .number()
+  .nonnegative()
+  .optional()
+  .or(z.nan().transform(() => undefined))
+
+const geometrySchema = z
+  .object({
+    diameter: z.number().positive(),
+    height: z.number().positive(),
+    latitude: z.number().gt(0).lte(90),
+    designPressure: z.number().positive(),
+    tankConfiguration: z.nativeEnum(TankConfiguration),
+    insulationThickness: nanOptionalPositive,
+    insulationConductivity: nanOptionalPositive,
+    insideHeatTransferCoeff: nanOptionalPositive,
+    insulatedSurfaceArea: nanOptionalNonneg,
+  })
+  .passthrough()
 
 /** Milliseconds of inactivity before the API call fires. */
 const DEBOUNCE_MS = 300
@@ -44,19 +76,19 @@ export function useCalculation(control: Control<CalculationInput>) {
 
   // ── Immediate: client-side derived geometry ────────────────────────────────
   useEffect(() => {
-    const parsed = calculationInputSchema.safeParse(formValues)
+    const parsed = geometrySchema.safeParse(formValues)
     if (!parsed.success) {
       setDerivedGeometry(null)
       return
     }
     try {
-      setDerivedGeometry(computeDerivedGeometry(parsed.data))
+      setDerivedGeometry(computeDerivedGeometry(parsed.data as unknown as CalculationInput))
     } catch {
       // e.g. INSULATED_FULL without insulation params — not yet fatal, just clear
       setDerivedGeometry(null)
     }
-  // formValues identity changes whenever any field changes — that's the trigger.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // formValues identity changes whenever any field changes — that's the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(formValues)])
 
   // ── Debounced: API call ────────────────────────────────────────────────────
@@ -64,7 +96,9 @@ export function useCalculation(control: Control<CalculationInput>) {
     const timer = setTimeout(async () => {
       const parsed = calculationInputSchema.safeParse(formValues)
       if (!parsed.success) {
-        // Form is invalid — clear results but don't set an error (inline errors handle it)
+        // Form is still incomplete — clear stale results and any previous error,
+        // and let the checklist handle the "what to fill" guidance.
+        setError(null)
         setCalculationResult(null)
         return
       }
@@ -79,10 +113,10 @@ export function useCalculation(control: Control<CalculationInput>) {
 
       try {
         const response = await fetch("/api/vent/calculate", {
-          method:  "POST",
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify(parsed.data),
-          signal:  controller.signal,
+          body: JSON.stringify(parsed.data),
+          signal: controller.signal,
         })
 
         if (controller.signal.aborted) return
@@ -105,7 +139,7 @@ export function useCalculation(control: Control<CalculationInput>) {
     }, DEBOUNCE_MS)
 
     return () => clearTimeout(timer)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(formValues)])
 
   // ── Cleanup on unmount ─────────────────────────────────────────────────────

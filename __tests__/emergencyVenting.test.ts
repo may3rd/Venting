@@ -6,21 +6,21 @@ import type { CalculationInput, DerivedGeometry } from "@/types"
 
 // ─── Reference case ───────────────────────────────────────────────────────────
 // API 7th, bare metal, D=24000mm, H=17500mm
-// Expected: Q≈5,741,539 W, F=1.0, V≈28,452 Nm³/h
+// ATWS=689.44 m² (≥260, DP>7) → a=43200, n=0.82
 
 const REF_INPUT: CalculationInput = {
-  tankNumber:            "TK-3120",
-  diameter:              24_000,
-  height:                17_500,
-  latitude:              12.7,
-  designPressure:        101.32,
-  tankConfiguration:     TankConfiguration.BARE_METAL,
-  avgStorageTemp:        35,
-  vapourPressure:        5.6,
+  tankNumber: "TK-3120",
+  diameter: 24_000,
+  height: 17_500,
+  latitude: 12.7,
+  designPressure: 101.32,
+  tankConfiguration: TankConfiguration.BARE_METAL,
+  avgStorageTemp: 35,
+  vapourPressure: 5.6,
   flashBoilingPointType: "FP",
-  incomingStreams:       [],
-  outgoingStreams:       [{ streamNo: "S-1", flowrate: 368.9 }],
-  apiEdition:            "7TH",
+  incomingStreams: [],
+  outgoingStreams: [{ streamNo: "S-1", flowrate: 368.9 }],
+  apiEdition: "7TH",
   // No L, T_r, M → Hexane defaults: 334.9, 15.6, 86.17
 }
 
@@ -36,16 +36,15 @@ function makeDerived(input: CalculationInput): DerivedGeometry {
 // ─── 7th Edition reference case ───────────────────────────────────────────────
 
 describe("computeEmergencyVenting — 7th edition reference case", () => {
-  it("Q ≈ 5,741,539 W (a=630400, n=0.338, ATWS=689.44)", () => {
+  it("Q ≈ 9,184,416 W (a=43200, n=0.82, ATWS=689.44)", () => {
     const r = computeEmergencyVenting(REF_INPUT, REF_DERIVED)
-    // 7th edition extends row 3 to ∞ → a=630,400, n=0.338 for ATWS=689.44
-    expect(r.heatInput).toBeCloseTo(5_741_539, -2)   // within ±50 W
+    expect(r.heatInput).toBeCloseTo(9_184_416, -2)
   })
 
-  it("coefficients: a=630400, n=0.338", () => {
+  it("coefficients: a=43200, n=0.82", () => {
     const r = computeEmergencyVenting(REF_INPUT, REF_DERIVED)
-    expect(r.coefficients.a).toBe(630_400)
-    expect(r.coefficients.n).toBe(0.338)
+    expect(r.coefficients.a).toBe(43_200)
+    expect(r.coefficients.n).toBe(0.82)
   })
 
   it("F = 1.0 (bare metal)", () => {
@@ -53,9 +52,9 @@ describe("computeEmergencyVenting — 7th edition reference case", () => {
     expect(r.environmentalFactor).toBe(1.0)
   })
 
-  it("emergency vent ≈ 28,452 Nm³/h (within ±50)", () => {
+  it("emergency vent ≈ 44,264 Nm³/h (208.2 × 1.0 × 689.44^0.82)", () => {
     const r = computeEmergencyVenting(REF_INPUT, REF_DERIVED)
-    expect(r.emergencyVentRequired).toBeCloseTo(28_452, -2)
+    expect(r.emergencyVentRequired).toBeCloseTo(44_264, -1)
   })
 
   it("referenceFluid = 'Hexane' when all three properties are omitted", () => {
@@ -100,22 +99,15 @@ describe("coefficient selection", () => {
     expect(r.coefficients.n).toBe(0.338)
   })
 
-  it("ATWS > 260, 7th ed → still uses a=630400, n=0.338 (no upper bound for 7th)", () => {
-    // Reference case: ATWS=689.44 > 260 but 7th ed uses row 3
+  it("ATWS > 260, DP > 7 → a=43200, n=0.82 (all editions)", () => {
+    // Reference case: ATWS=689.44 > 260, DP=101.32 > 7
     const r = computeEmergencyVenting(REF_INPUT, REF_DERIVED)
-    expect(r.coefficients.a).toBe(630_400)
-    expect(r.coefficients.n).toBe(0.338)
-  })
-
-  it("ATWS > 260, 5th/6th ed, DP > 7 → a=43200, n=0.82", () => {
-    const input = makeInput({ apiEdition: "6TH", designPressure: 50 })
-    const r = computeEmergencyVenting(input, REF_DERIVED)  // ATWS=689.44 > 260
     expect(r.coefficients.a).toBe(43_200)
     expect(r.coefficients.n).toBe(0.82)
   })
 
-  it("ATWS > 260, 5th/6th ed, DP ≤ 7 → a=4129700, n=0", () => {
-    const input = makeInput({ apiEdition: "5TH", designPressure: 5 })
+  it("ATWS > 260, DP ≤ 7 → a=4129700, n=0 (all editions)", () => {
+    const input = makeInput({ designPressure: 5 })
     const r = computeEmergencyVenting(input, REF_DERIVED)  // ATWS=689.44 > 260
     expect(r.coefficients.a).toBe(4_129_700)
     expect(r.coefficients.n).toBe(0)
@@ -126,7 +118,7 @@ describe("coefficient selection", () => {
 
 describe("environmental factor", () => {
   it("F = 0 for underground → emergencyVentRequired = 0", () => {
-    const input  = makeInput({ tankConfiguration: TankConfiguration.UNDERGROUND })
+    const input = makeInput({ tankConfiguration: TankConfiguration.UNDERGROUND })
     const r = computeEmergencyVenting(input, REF_DERIVED)
     expect(r.environmentalFactor).toBe(0)
     expect(r.emergencyVentRequired).toBe(0)
@@ -145,9 +137,9 @@ describe("environmental factor", () => {
   })
 
   it("lower F yields proportionally lower emergencyVentRequired (7th ed formula)", () => {
-    const rBare     = computeEmergencyVenting(REF_INPUT, REF_DERIVED)
-    const inputImp  = makeInput({ tankConfiguration: TankConfiguration.IMPOUNDMENT })
-    const rImp      = computeEmergencyVenting(inputImp, REF_DERIVED)
+    const rBare = computeEmergencyVenting(REF_INPUT, REF_DERIVED)
+    const inputImp = makeInput({ tankConfiguration: TankConfiguration.IMPOUNDMENT })
+    const rImp = computeEmergencyVenting(inputImp, REF_DERIVED)
     // F for impoundment = 0.5, bare metal = 1.0 → ratio should be ≈ 0.5
     expect(rImp.emergencyVentRequired / rBare.emergencyVentRequired).toBeCloseTo(0.5, 5)
   })
@@ -161,7 +153,7 @@ describe("5th/6th edition table path (ATWS ≤ 260)", () => {
   const smallInput: CalculationInput = {
     ...REF_INPUT,
     diameter: 10_000,
-    height:   5_000,
+    height: 5_000,
     apiEdition: "6TH",
   }
   const smallDerived = makeDerived(smallInput)
@@ -175,33 +167,53 @@ describe("5th/6th edition table path (ATWS ≤ 260)", () => {
     expect(r.emergencyVentRequired).toBeLessThanOrEqual(19_910)
   })
 
-  it("same ATWS but 7th ed gives different (formula-based) result", () => {
+  it("same ATWS: heatInput and vent rate identical for 6th and 7th (edition-independent)", () => {
     const input7th = { ...smallInput, apiEdition: "7TH" as const }
     const r6 = computeEmergencyVenting(smallInput, smallDerived)
     const r7 = computeEmergencyVenting(input7th, smallDerived)
-    // Results should differ (different calculation paths)
-    expect(r6.emergencyVentRequired).not.toBeCloseTo(r7.emergencyVentRequired, 0)
+    // All editions use the same calculation now
+    expect(r6.heatInput).toBeCloseTo(r7.heatInput, 5)
+    expect(r6.emergencyVentRequired).toBeCloseTo(r7.emergencyVentRequired, 5)
   })
 })
 
 // ─── User-specified fluid properties ─────────────────────────────────────────
 
 describe("user-specified fluid properties", () => {
-  it("higher latent heat → lower emergency vent required", () => {
-    const rDefault    = computeEmergencyVenting(REF_INPUT, REF_DERIVED)
-    const rHighL      = computeEmergencyVenting(makeInput({ latentHeat: 600 }), REF_DERIVED)
-    expect(rHighL.emergencyVentRequired).toBeLessThan(rDefault.emergencyVentRequired)
+  // REF_INPUT has ATWS=689.44 > 260 and DP=101.32 > 7, so ATWS ≥ 260, DP > 7 path applies.
+  // Hexane → 208.2 simplified; user-defined → 906.6 general formula.
+
+  it("Hexane (no props) uses simplified formula; user-defined uses general formula (different result)", () => {
+    const rHexane = computeEmergencyVenting(REF_INPUT, REF_DERIVED)
+    const rUser = computeEmergencyVenting(makeInput({ latentHeat: 600 }), REF_DERIVED)
+    // Different formulas → different results
+    expect(rUser.emergencyVentRequired).not.toBeCloseTo(rHexane.emergencyVentRequired, 0)
   })
 
-  it("higher relieving temperature → higher emergency vent required", () => {
-    const rDefault    = computeEmergencyVenting(REF_INPUT, REF_DERIVED)
-    const rHighT      = computeEmergencyVenting(makeInput({ relievingTemperature: 100 }), REF_DERIVED)
-    expect(rHighT.emergencyVentRequired).toBeGreaterThan(rDefault.emergencyVentRequired)
+  it("higher latent heat → lower vent required (less vapour per unit heat)", () => {
+    const rLow = computeEmergencyVenting(makeInput({ latentHeat: 300 }), REF_DERIVED)
+    const rHigh = computeEmergencyVenting(makeInput({ latentHeat: 600 }), REF_DERIVED)
+    expect(rHigh.emergencyVentRequired).toBeLessThan(rLow.emergencyVentRequired)
   })
 
-  it("higher molecular mass → lower emergency vent required", () => {
-    const rDefault    = computeEmergencyVenting(REF_INPUT, REF_DERIVED)
-    const rHighM      = computeEmergencyVenting(makeInput({ molecularMass: 200 }), REF_DERIVED)
-    expect(rHighM.emergencyVentRequired).toBeLessThan(rDefault.emergencyVentRequired)
+  it("higher relieving temperature → higher vent required (vapour expands more)", () => {
+    const rLow = computeEmergencyVenting(makeInput({ relievingTemperature: 10 }), REF_DERIVED)
+    const rHigh = computeEmergencyVenting(makeInput({ relievingTemperature: 100 }), REF_DERIVED)
+    expect(rHigh.emergencyVentRequired).toBeGreaterThan(rLow.emergencyVentRequired)
+  })
+
+  it("higher molecular mass → lower vent required (denser vapour)", () => {
+    const rLow = computeEmergencyVenting(makeInput({ molecularMass: 50 }), REF_DERIVED)
+    const rHigh = computeEmergencyVenting(makeInput({ molecularMass: 200 }), REF_DERIVED)
+    expect(rHigh.emergencyVentRequired).toBeLessThan(rLow.emergencyVentRequired)
+  })
+
+  it("partial fluid props: missing values fall back to Hexane defaults", () => {
+    // Only L provided, T_r and M default to Hexane
+    const rPartial = computeEmergencyVenting(makeInput({ latentHeat: 334.9 }), REF_DERIVED)
+    // L=334.9 (same as Hexane), T_r=15.6°C, M=86.17 → 906.6 formula with Hexane values
+    // Result should differ from the 208.2 simplified value (different derivation base)
+    expect(rPartial.referenceFluid).toBe("User-defined")
+    expect(rPartial.emergencyVentRequired).toBeGreaterThan(0)
   })
 })

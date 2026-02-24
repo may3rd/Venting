@@ -7,18 +7,18 @@ import type { CalculationInput, DerivedGeometry } from "@/types"
 
 // ─── Reference geometry (pre-computed for speed) ──────────────────────────────
 const REF_INPUT: CalculationInput = {
-  tankNumber:            "TK-3120",
-  diameter:              24_000,
-  height:                17_500,
-  latitude:              12.7,
-  designPressure:        101.32,
-  tankConfiguration:     TankConfiguration.BARE_METAL,
-  avgStorageTemp:        35,
-  vapourPressure:        5.6,
+  tankNumber: "TK-3120",
+  diameter: 24_000,
+  height: 17_500,
+  latitude: 12.7,
+  designPressure: 101.32,
+  tankConfiguration: TankConfiguration.BARE_METAL,
+  avgStorageTemp: 35,
+  vapourPressure: 5.6,
   flashBoilingPointType: "FP",
-  incomingStreams:       [],
-  outgoingStreams:       [{ streamNo: "S-1", flowrate: 368.9 }],
-  apiEdition:            "7TH",
+  incomingStreams: [],
+  outgoingStreams: [{ streamNo: "S-1", flowrate: 368.9 }],
+  apiEdition: "7TH",
 }
 
 const REF_DERIVED: DerivedGeometry = computeDerivedGeometry(REF_INPUT)
@@ -31,10 +31,10 @@ function makeInput(overrides: Partial<CalculationInput>): CalculationInput {
 // ─── 7th Edition ─────────────────────────────────────────────────────────────
 
 describe("computeNormalVenting — 7th edition", () => {
-  it("reference case: processOutbreathing = 368.9, processInbreathing = 0", () => {
+  it("reference case: processOutbreathing = 0 (no incoming streams to tank)", () => {
     const r = computeNormalVenting(REF_INPUT, REF_DERIVED)
-    expect(r.outbreathing.processFlowrate).toBeCloseTo(368.9, 5)
-    expect(r.inbreathing.processFlowrate).toBeCloseTo(0, 5)
+    expect(r.outbreathing.processFlowrate).toBeCloseTo(0, 5)
+    expect(r.inbreathing.processFlowrate).toBeCloseTo(368.9, 5)
   })
 
   it("reference case: yFactor = 0.32 (lat < 42°)", () => {
@@ -53,18 +53,16 @@ describe("computeNormalVenting — 7th edition", () => {
     expect(r.inbreathing.reductionFactor).toBe(1.0)
   })
 
-  it("reference case: thermal outbreathing = Y × tableOut × R", () => {
+  it("reference case: thermal outbreathing = Y × V_tk^0.9 × R", () => {
     const cap = REF_DERIVED.maxTankVolume
-    const tableOut = normalVentOutbreathing(cap, false)
-    const expected = 0.32 * tableOut * 1.0
+    const expected = 0.32 * Math.pow(cap, 0.9) * 1.0
     const r = computeNormalVenting(REF_INPUT, REF_DERIVED)
     expect(r.outbreathing.thermalOutbreathing).toBeCloseTo(expected, 5)
   })
 
-  it("reference case: thermal inbreathing = C × tableIn × R", () => {
+  it("reference case: thermal inbreathing = C × V_tk^0.7 × R", () => {
     const cap = REF_DERIVED.maxTankVolume
-    const tableIn = normalVentInbreathing(cap)
-    const expected = 6.5 * tableIn * 1.0
+    const expected = 6.5 * Math.pow(cap, 0.7) * 1.0
     const r = computeNormalVenting(REF_INPUT, REF_DERIVED)
     expect(r.inbreathing.thermalInbreathing).toBeCloseTo(expected, 5)
   })
@@ -79,7 +77,7 @@ describe("computeNormalVenting — 7th edition", () => {
     )
   })
 
-  it("multiple outgoing streams: sums all flowrates for outbreathing", () => {
+  it("multiple outgoing streams (from tank): sums all flowrates for inbreathing", () => {
     const input = makeInput({
       outgoingStreams: [
         { streamNo: "S-1", flowrate: 100 },
@@ -87,10 +85,10 @@ describe("computeNormalVenting — 7th edition", () => {
       ],
     })
     const r = computeNormalVenting(input, REF_DERIVED)
-    expect(r.outbreathing.processFlowrate).toBeCloseTo(300, 8)
+    expect(r.inbreathing.processFlowrate).toBeCloseTo(300, 8)
   })
 
-  it("multiple incoming streams: sums all flowrates for inbreathing", () => {
+  it("multiple incoming streams (to tank): sums all flowrates for outbreathing", () => {
     const input = makeInput({
       incomingStreams: [
         { streamNo: "S-3", flowrate: 50 },
@@ -98,29 +96,31 @@ describe("computeNormalVenting — 7th edition", () => {
       ],
     })
     const r = computeNormalVenting(input, REF_DERIVED)
-    expect(r.inbreathing.processFlowrate).toBeCloseTo(125, 8)
+    expect(r.outbreathing.processFlowrate).toBeCloseTo(125, 8)
   })
 
-  it("low-volatility fluid: uses smaller outbreathing table value", () => {
-    // FP=50 ≥ 37.8 → low volatility → lower thermal outbreathing
-    const inputHighFP  = makeInput({ flashBoilingPointType: "FP", flashBoilingPoint: 50 })
-    const inputLowFP   = makeInput({ flashBoilingPointType: "FP", flashBoilingPoint: 10 })
-    const cap = REF_DERIVED.maxTankVolume
+  it("low-volatility fluid: uses lower Y-factor column (same formula)", () => {
+    // FP=50 ≥ 37.8 → low volatility → same Y but C changes for inbreathing
+    const inputHighFP = makeInput({ flashBoilingPointType: "FP", flashBoilingPoint: 50 })
+    const inputLowFP = makeInput({ flashBoilingPointType: "FP", flashBoilingPoint: 10 })
+    // Outbreathing uses V_tk^0.9 (same for both), Y-factor is same (only lat-dependent)
+    // So outbreathing is the same for both. Inbreathing uses different C-factor.
     const rHigh = computeNormalVenting(inputHighFP, REF_DERIVED)
-    const rLow  = computeNormalVenting(inputLowFP,  REF_DERIVED)
-    expect(rHigh.outbreathing.thermalOutbreathing).toBeLessThan(rLow.outbreathing.thermalOutbreathing)
+    const rLow = computeNormalVenting(inputLowFP, REF_DERIVED)
+    // Both should have same thermal outbreathing (Y only depends on latitude)
+    expect(rHigh.outbreathing.thermalOutbreathing).toBeCloseTo(rLow.outbreathing.thermalOutbreathing, 5)
   })
 
   it("insulated tank: reductionFactor < 1 reduces thermal venting", () => {
     const insulatedInput: CalculationInput = {
       ...REF_INPUT,
-      tankConfiguration:      TankConfiguration.INSULATED_FULL,
-      insulationThickness:    102,
+      tankConfiguration: TankConfiguration.INSULATED_FULL,
+      insulationThickness: 102,
       insulationConductivity: 0.05,
       insideHeatTransferCoeff: 5.7,
     }
     const insulatedDerived = computeDerivedGeometry(insulatedInput)
-    const rBare      = computeNormalVenting(REF_INPUT, REF_DERIVED)
+    const rBare = computeNormalVenting(REF_INPUT, REF_DERIVED)
     const rInsulated = computeNormalVenting(insulatedInput, insulatedDerived)
     expect(rInsulated.outbreathing.thermalOutbreathing)
       .toBeLessThan(rBare.outbreathing.thermalOutbreathing)
@@ -134,10 +134,10 @@ describe("computeNormalVenting — 7th edition", () => {
 describe("computeNormalVenting — 6th edition", () => {
   const input6 = makeInput({ apiEdition: "6TH" })
 
-  it("yFactor = 1, cFactor = 1 (not applied in 6th ed)", () => {
+  it("yFactor and cFactor are applied (same as 7th ed)", () => {
     const r = computeNormalVenting(input6, REF_DERIVED)
-    expect(r.outbreathing.yFactor).toBe(1)
-    expect(r.inbreathing.cFactor).toBe(1)
+    expect(r.outbreathing.yFactor).toBe(0.32) // lat 12.7° < 42°
+    expect(r.inbreathing.cFactor).toBe(6.5)   // lat<42°, not low-vol, cap>25m³
   })
 
   it("total = process + thermal (summation logic)", () => {
@@ -150,23 +150,21 @@ describe("computeNormalVenting — 6th edition", () => {
     )
   })
 
-  it("thermal = tableValue × R (no Y/C multiplication)", () => {
+  it("thermal = Y/C × V_tk^0.9/0.7 × R (same formula as 7th)", () => {
     const cap = REF_DERIVED.maxTankVolume
     const r = computeNormalVenting(input6, REF_DERIVED)
     expect(r.outbreathing.thermalOutbreathing).toBeCloseTo(
-      normalVentOutbreathing(cap, false) * 1.0, 5,
+      0.32 * Math.pow(cap, 0.9) * 1.0, 5,
     )
     expect(r.inbreathing.thermalInbreathing).toBeCloseTo(
-      normalVentInbreathing(cap) * 1.0, 5,
+      6.5 * Math.pow(cap, 0.7) * 1.0, 5,
     )
   })
 
-  it("6th thermal outbreathing > 7th thermal outbreathing (Y<1 reduces 7th)", () => {
-    // 6th: thermal = tableOut (no Y factor, Y=1 effectively)
-    // 7th: thermal = 0.32 × tableOut  (Y=0.32 < 1)
+  it("6th and 7th thermal outbreathing are identical (same formula)", () => {
     const r6 = computeNormalVenting(input6, REF_DERIVED)
     const r7 = computeNormalVenting(REF_INPUT, REF_DERIVED)
-    expect(r6.outbreathing.thermalOutbreathing).toBeGreaterThan(r7.outbreathing.thermalOutbreathing)
+    expect(r6.outbreathing.thermalOutbreathing).toBeCloseTo(r7.outbreathing.thermalOutbreathing, 5)
   })
 })
 
@@ -181,18 +179,23 @@ describe("computeNormalVenting — 5th edition", () => {
     expect(r.inbreathing.cFactor).toBe(1)
   })
 
-  it("process inbreathing = 0.94 × sum of incoming flowrates", () => {
-    const inputWithIn = makeInput({
+  it("process inbreathing = 0.94 × sum of outgoing (from tank) flowrates", () => {
+    const inputWithOut = makeInput({
       apiEdition: "5TH",
-      incomingStreams: [{ streamNo: "S-1", flowrate: 200 }],
+      outgoingStreams: [{ streamNo: "S-1", flowrate: 200 }],
     })
-    const r = computeNormalVenting(inputWithIn, REF_DERIVED)
+    const r = computeNormalVenting(inputWithOut, REF_DERIVED)
     expect(r.inbreathing.processFlowrate).toBeCloseTo(0.94 * 200, 8)
   })
 
-  it("process outbreathing = sum of outgoing flowrates (no 0.94)", () => {
-    const r = computeNormalVenting(input5, REF_DERIVED)
-    expect(r.outbreathing.processFlowrate).toBeCloseTo(368.9, 5)
+  it("process outbreathing = sum of incoming (to tank) flowrates (no 0.94)", () => {
+    const inputWithIn = makeInput({
+      apiEdition: "5TH",
+      incomingStreams: [{ streamNo: "S-2", flowrate: 100 }],
+      outgoingStreams: [],
+    })
+    const r = computeNormalVenting(inputWithIn, REF_DERIVED)
+    expect(r.outbreathing.processFlowrate).toBeCloseTo(100, 5)
   })
 
   it("total = max(process, thermal) for outbreathing", () => {
@@ -216,10 +219,11 @@ describe("computeNormalVenting — 5th edition", () => {
   })
 
   it("when process > thermal, total equals process", () => {
-    // Use a very high outgoing flowrate so process outbreathing > thermal
+    // Use a very high incoming (to tank) flowrate so process outbreathing > thermal
     const inputHighFlow = makeInput({
       apiEdition: "5TH",
-      outgoingStreams: [{ streamNo: "S-1", flowrate: 50_000 }],
+      incomingStreams: [{ streamNo: "S-1", flowrate: 50_000 }],
+      outgoingStreams: [],
     })
     const r = computeNormalVenting(inputHighFlow, REF_DERIVED)
     expect(r.outbreathing.total).toBeCloseTo(r.outbreathing.processFlowrate, 8)

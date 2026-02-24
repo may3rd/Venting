@@ -14,16 +14,16 @@ function sumFlowrates(streams: readonly { flowrate: number }[]): number {
 /**
  * Compute normal venting (outbreathing + inbreathing) for all API editions.
  *
- * Stream direction (process perspective, per PD.md §4.4):
- *   incomingStreams  → liquid arriving at the process FROM the tank
- *                      = tank liquid outflow → tank level drops → INBREATHING
- *   outgoingStreams  → liquid leaving the process TO the tank
- *                      = tank liquid inflow  → tank level rises → OUTBREATHING
+ * Stream direction (tank perspective, per UI labels):
+ *   incomingStreams  → liquid entering the tank (to tank)
+ *                      = tank level rises → vapour displaced → OUTBREATHING
+ *   outgoingStreams  → liquid leaving the tank (from tank)
+ *                      = tank level drops → air drawn in → INBREATHING
  *
  * API edition differences:
  *   5th  – process inbreathing × 0.94; total = max(process, thermal)
- *   6th  – no 0.94 factor; total = process + thermal; no Y/C factor
- *   7th  – no 0.94 factor; total = process + thermal; Y/C factor applied
+ *   6th  – no 0.94 factor; total = process + thermal; Y/C × V_tk^n formula
+ *   7th  – no 0.94 factor; total = process + thermal; Y/C × V_tk^n formula
  *
  * Reduction factor R is applied to thermal venting for all editions.
  */
@@ -42,89 +42,98 @@ export function computeNormalVenting(
 
   const { maxTankVolume, reductionFactor } = derived
 
-  const incomingTotal  = sumFlowrates(incomingStreams)
-  const outgoingTotal  = sumFlowrates(outgoingStreams)
-  const lowVol         = isLowVolatility(flashBoilingPointType, flashBoilingPoint)
+  const incomingTotal = sumFlowrates(incomingStreams)
+  const outgoingTotal = sumFlowrates(outgoingStreams)
+  const lowVol = isLowVolatility(flashBoilingPointType, flashBoilingPoint)
 
-  // Thermal lookup — same table for all editions; Y/C factor only for 7th
-  const tableIn  = normalVentInbreathing(maxTankVolume)
+  // Thermal lookup — table only used for 5th edition
+  const tableIn = normalVentInbreathing(maxTankVolume)
   const tableOut = normalVentOutbreathing(maxTankVolume, lowVol)
 
   // ── 5th Edition ─────────────────────────────────────────────────────────────
   if (apiEdition === "5TH") {
     // Process inbreathing is multiplied by 0.94 per API 5th
-    const processInbreathing  = 0.94 * incomingTotal
-    const processOutbreathing = outgoingTotal
-    const thermalIn  = tableIn  * reductionFactor
+    const processInbreathing = 0.94 * outgoingTotal
+    const processOutbreathing = incomingTotal
+    const thermalIn = tableIn * reductionFactor
     const thermalOut = tableOut * reductionFactor
 
     return {
       outbreathing: {
-        processFlowrate:    processOutbreathing,
-        yFactor:            1,  // Y-factor not applicable in 5th edition
+        processFlowrate: processOutbreathing,
+        yFactor: 1,  // Y-factor not applicable in 5th edition
         reductionFactor,
         thermalOutbreathing: thermalOut,
-        total:              Math.max(processOutbreathing, thermalOut),
+        total: Math.max(processOutbreathing, thermalOut),
       },
       inbreathing: {
-        processFlowrate:    processInbreathing,
-        cFactor:            1,  // C-factor not applicable in 5th edition
+        processFlowrate: processInbreathing,
+        cFactor: 1,  // C-factor not applicable in 5th edition
         reductionFactor,
         thermalInbreathing: thermalIn,
-        total:              Math.max(processInbreathing, thermalIn),
+        total: Math.max(processInbreathing, thermalIn),
       },
     }
   }
 
   // ── 6th Edition ─────────────────────────────────────────────────────────────
+  // Same formula as 7th: Y × V_tk^0.9 × R / C × V_tk^0.7 × R
+  // Total = process + thermal
   if (apiEdition === "6TH") {
-    const processInbreathing  = incomingTotal
-    const processOutbreathing = outgoingTotal
-    const thermalIn  = tableIn  * reductionFactor
-    const thermalOut = tableOut * reductionFactor
+    const processInbreathing = outgoingTotal
+    const processOutbreathing = incomingTotal
+
+    const yFactor = getYFactor(latitude)
+    const cFactor = getCFactor(latitude, flashBoilingPointType, flashBoilingPoint, maxTankVolume)
+
+    const thermalOut = yFactor * Math.pow(maxTankVolume, 0.9) * reductionFactor
+    const thermalIn = cFactor * Math.pow(maxTankVolume, 0.7) * reductionFactor
 
     return {
       outbreathing: {
-        processFlowrate:    processOutbreathing,
-        yFactor:            1,  // Y-factor not applicable in 6th edition
+        processFlowrate: processOutbreathing,
+        yFactor,
         reductionFactor,
         thermalOutbreathing: thermalOut,
-        total:              processOutbreathing + thermalOut,
+        total: processOutbreathing + thermalOut,
       },
       inbreathing: {
-        processFlowrate:    processInbreathing,
-        cFactor:            1,  // C-factor not applicable in 6th edition
+        processFlowrate: processInbreathing,
+        cFactor,
         reductionFactor,
         thermalInbreathing: thermalIn,
-        total:              processInbreathing + thermalIn,
+        total: processInbreathing + thermalIn,
       },
     }
   }
 
   // ── 7th Edition ─────────────────────────────────────────────────────────────
-  const processInbreathing  = incomingTotal
-  const processOutbreathing = outgoingTotal
+  // Uses direct formulas (not table interpolation):
+  //   Thermal outbreathing = Y × V_tk^0.9 × R
+  //   Thermal inbreathing  = C × V_tk^0.7 × R
+  const processInbreathing = outgoingTotal
+  const processOutbreathing = incomingTotal
 
   const yFactor = getYFactor(latitude)
   const cFactor = getCFactor(latitude, flashBoilingPointType, flashBoilingPoint, maxTankVolume)
 
-  const thermalOut = yFactor * tableOut * reductionFactor
-  const thermalIn  = cFactor * tableIn  * reductionFactor
+  const thermalOut = yFactor * Math.pow(maxTankVolume, 0.9) * reductionFactor
+  const thermalIn = cFactor * Math.pow(maxTankVolume, 0.7) * reductionFactor
 
   return {
     outbreathing: {
-      processFlowrate:    processOutbreathing,
+      processFlowrate: processOutbreathing,
       yFactor,
       reductionFactor,
       thermalOutbreathing: thermalOut,
-      total:              processOutbreathing + thermalOut,
+      total: processOutbreathing + thermalOut,
     },
     inbreathing: {
-      processFlowrate:    processInbreathing,
+      processFlowrate: processInbreathing,
       cFactor,
       reductionFactor,
       thermalInbreathing: thermalIn,
-      total:              processInbreathing + thermalIn,
+      total: processInbreathing + thermalIn,
     },
   }
 }

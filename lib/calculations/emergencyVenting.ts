@@ -1,43 +1,25 @@
-import { CalculationInput, DerivedGeometry, EmergencyVentingResult, ApiEdition } from "@/types"
+import { CalculationInput, DerivedGeometry, EmergencyVentingResult } from "@/types"
 import { HEXANE_DEFAULTS } from "@/lib/constants"
 import { getEnvironmentalFactor } from "@/lib/lookups/fFactor"
 import { emergencyVentTableLookup } from "@/lib/lookups/emergencyVentTable"
 
-// ─── Coefficient selection ────────────────────────────────────────────────────
-
 /**
  * Select heat input coefficients (a, n) for Q = a × ATWS^n  (API 2000 §6.3 Table 3).
  *
- * API edition affects row selection for large ATWS:
- *
- *   7th edition:
- *     Row 3 (a=630,400, n=0.338) extends to ∞ — no upper limit at 260 m².
- *     This is confirmed by the reference case: ATWS=689.44 m² → Q=5,741,539 W.
- *
- *   5th/6th editions:
- *     Row 3 ends at 260 m² (the emergency vent table covers 0–260 m²).
- *     Above 260 m², rows 4/5 apply when the table cannot be used:
- *       ATWS ≥ 260 and DP > 7 → a=43,200, n=0.82
- *       ATWS ≥ 260 and DP ≤ 7 → a=4,129,700, n=0
+ * Same coefficients for all API editions. Selected by wetted area and design pressure.
  */
 function selectCoefficients(
   wettedAreaM2: number,
   designPressure: number,
-  apiEdition: ApiEdition,
 ): { a: number; n: number } {
-  if (wettedAreaM2 < 18.6)  return { a:    63_150, n: 1     }
-  if (wettedAreaM2 < 93)    return { a:   224_200, n: 0.566 }
+  if (wettedAreaM2 < 18.6) return { a: 63_150, n: 1 }
+  if (wettedAreaM2 < 93) return { a: 224_200, n: 0.566 }
+  if (wettedAreaM2 < 260) return { a: 630_400, n: 0.338 }
 
-  // 7th edition: row 3 extends to ∞
-  // 5th/6th edition: row 3 applies only below 260 m²; above that use rows 4/5
-  if (apiEdition === "7TH" || wettedAreaM2 < 260) {
-    return { a: 630_400, n: 0.338 }
-  }
-
-  // 5th/6th, ATWS ≥ 260 (beyond emergency vent table)
+  // ATWS ≥ 260
   return designPressure > 7
-    ? { a:   43_200, n: 0.82 }
-    : { a: 4_129_700, n: 0   }
+    ? { a: 43_200, n: 0.82 }
+    : { a: 4_129_700, n: 0 }
 }
 
 // ─── Main computation ─────────────────────────────────────────────────────────
@@ -46,15 +28,19 @@ function selectCoefficients(
  * Compute emergency venting requirements for fire exposure (API 2000 §6.3).
  *
  * Steps:
- *   1. Select heat input coefficients by ATWS + design pressure + API edition
+ *   1. Select heat input coefficients by ATWS + design pressure
  *   2. Q = a × ATWS^n  (W)
- *   3. F = environmental factor (from tank configuration / insulation table)
+ *   3. F = environmental factor (from tank configuration / insulation)
  *   4. Vent rate:
- *        5th/6th, ATWS ≤ 260 m² → V = F × emergencyVentTableLookup(ATWS)
- *        7th edition or ATWS > 260 → V = (906.6 × Q × F) / (1000 × L) × √((T_r+273.15)/M)
+ *        ATWS < 260          → V = F × Table 7 lookup  (all fluids)
+ *        ATWS ≥ 260, Hexane  → V = simplified formula (API 2000 Eq. 16 / 17)
+ *                                  DP ≤ 7: F × 19,910
+ *                                  DP > 7: 208.2 × F × ATWS^0.82
+ *        ATWS ≥ 260, user fluid → V = general formula (API 2000 Eq. 14)
+ *                                  906.6 × Q × F / (1000 × L) × √((T_r+273.15)/M)
  *
- * Hexane defaults are used when latentHeat / relievingTemperature / molecularMass
- * are not provided by the user (per API 2000 recommendation).
+ * Hexane defaults are used when L / T_r / M are not provided (per API 2000).
+ * For user-defined fluids, actual values are used; Hexane defaults fill any gaps.
  */
 export function computeEmergencyVenting(
   input: CalculationInput,
@@ -62,7 +48,6 @@ export function computeEmergencyVenting(
 ): EmergencyVentingResult {
   const {
     designPressure,
-    apiEdition,
     latentHeat,
     relievingTemperature,
     molecularMass,
@@ -87,25 +72,32 @@ export function computeEmergencyVenting(
   const F = getEnvironmentalFactor(tankConfiguration, insulationConductivity, insulationThickness)
 
   // Heat input Q
-  const coefficients = selectCoefficients(wettedArea, designPressure, apiEdition)
+  const coefficients = selectCoefficients(wettedArea, designPressure)
   const Q = coefficients.a * Math.pow(wettedArea, coefficients.n)
 
   // Emergency vent rate
   let emergencyVentRequired: number
-  if (apiEdition !== "7TH" && wettedArea <= 260) {
-    // 5th/6th edition: use tabulated vent rate (pre-calculated for F=1), scale by F
+  if (wettedArea < 260) {
+    // ATWS < 260 → Table 7 lookup (pre-calculated for Hexane, F=1), scaled by F
     emergencyVentRequired = F * emergencyVentTableLookup(wettedArea)
+  } else if (referenceFluid === "User-defined") {
+    // User-specified fluid → general formula (API 2000 Eq. 14)
+    // V = 906.6 × Q × F / (1000 × L) × √((T_r + 273.15) / M)
+    emergencyVentRequired = (906.6 * Q * F) / (1000 * L) * Math.sqrt((T_r + 273.15) / M)
+  } else if (designPressure <= 7) {
+    // Hexane, ATWS ≥ 260, DP ≤ 7 → simplified fixed value (API 2000 Eq. 17)
+    emergencyVentRequired = F * 19_910
   } else {
-    // 7th edition (or 5th/6th with ATWS > 260): use API formula
-    emergencyVentRequired =
-      (906.6 * Q * F) / (1000 * L) * Math.sqrt((T_r + 273.15) / M)
+    // Hexane, ATWS ≥ 260, DP > 7 → simplified formula (API 2000 Eq. 16)
+    // V = 208.2 × F × ATWS^0.82
+    emergencyVentRequired = 208.2 * F * Math.pow(wettedArea, 0.82)
   }
 
   return {
-    heatInput:             Q,
-    environmentalFactor:   F,
+    heatInput: Q,
+    environmentalFactor: F,
     emergencyVentRequired,
-    coefficients:          { a: coefficients.a, n: coefficients.n },
+    coefficients: { a: coefficients.a, n: coefficients.n },
     referenceFluid,
   }
 }

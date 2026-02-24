@@ -20,6 +20,7 @@ export type FlashBoilingPointType = "FP" | "BP"
 
 export interface Stream {
   streamNo: string
+  description?: string
   flowrate: number // m³/h
 }
 

@@ -29,16 +29,16 @@ function IncomingStreamTable() {
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium">Incoming Streams (from tank)</p>
+          <p className="text-sm font-medium">Incoming Streams (to tank)</p>
           <p className="text-xs text-muted-foreground">
-            Liquid leaving the tank → drives inbreathing
+            Liquid entering the tank → drives outbreathing
           </p>
         </div>
         <Button
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => append({ streamNo: "", flowrate: 0 })}
+          onClick={() => append({ streamNo: "", description: "", flowrate: 0 })}
           className="h-7 text-xs gap-1"
         >
           <Plus className="h-3.5 w-3.5" />
@@ -54,20 +54,26 @@ function IncomingStreamTable() {
         </div>
       ) : (
         <div className="rounded-md border overflow-hidden">
-          <div className="grid grid-cols-[5rem_1fr_2rem] gap-2 px-3 py-1.5 bg-muted/50 border-b text-xs font-medium text-muted-foreground">
+          <div className="grid grid-cols-[5rem_1fr_6rem_2rem] gap-2 px-3 py-1.5 bg-muted/50 border-b text-xs font-medium text-muted-foreground">
             <span>Stream No.</span>
+            <span>Description</span>
             <span>Flowrate (m³/h)</span>
             <span />
           </div>
           {fields.map((field, index) => (
             <div
               key={field.id}
-              className="grid grid-cols-[5rem_1fr_2rem] gap-2 px-3 py-2 items-center border-b last:border-b-0"
+              className="grid grid-cols-[5rem_1fr_6rem_2rem] gap-2 px-3 py-2 items-center border-b last:border-b-0"
             >
               <Input
                 className="h-7 text-xs"
                 placeholder="S-01"
                 {...register(`incomingStreams.${index}.streamNo`)}
+              />
+              <Input
+                className="h-7 text-xs"
+                placeholder="Optional"
+                {...register(`incomingStreams.${index}.description`)}
               />
               <Input
                 className="h-7 text-xs"
@@ -130,9 +136,9 @@ function OutgoingStreamTable() {
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium">Outgoing Streams (to tank)</p>
+          <p className="text-sm font-medium">Outgoing Streams (from tank)</p>
           <p className="text-xs text-muted-foreground">
-            Liquid entering the tank → drives outbreathing
+            Liquid leaving the tank → drives inbreathing
           </p>
         </div>
         <Button

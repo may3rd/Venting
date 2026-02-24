@@ -15,13 +15,13 @@ import { ExportButton } from "./components/ExportButton"
 // Required enum fields must have valid defaults; numeric fields start empty.
 
 const DEFAULT_VALUES = {
-  tankNumber:            "",
-  description:           "",
-  tankConfiguration:     TankConfiguration.BARE_METAL,
+  tankNumber: "",
+  description: "",
+  tankConfiguration: TankConfiguration.BARE_METAL,
   flashBoilingPointType: "FP" as const,
-  incomingStreams:       [] as CalculationInput["incomingStreams"],
-  outgoingStreams:       [] as CalculationInput["outgoingStreams"],
-  apiEdition:            "7TH" as const,
+  incomingStreams: [] as CalculationInput["incomingStreams"],
+  outgoingStreams: [] as CalculationInput["outgoingStreams"],
+  apiEdition: "7TH" as const,
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -69,8 +69,8 @@ export default function CalculatorPage() {
               <InputPanel />
             </div>
 
-            {/* Right — Results (sticky on large screens) */}
-            <div className="xl:sticky xl:top-6">
+            {/* Right — Results */}
+            <div>
               <ResultsPanel />
             </div>
           </div>

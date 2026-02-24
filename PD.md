@@ -78,24 +78,24 @@ All calculations strictly follow **API 2000** (user selects edition: 5th, 6th, o
 | `vapourPressure` | number | kPa | — |
 | `flashOrBoilingPoint` | number | °C | User selects FP or BP |
 | `flashOrBoilingPointType` | enum | — | `"FP"` or `"BP"` |
-| `latentHeat` | number | kJ/kg | Required for emergency vent; blank → use Hexane (334.9) |
-| `relievingTemperature` | number | °C | Required for emergency vent; blank → use Hexane default (15.6) |
-| `molecularMass` | number | — | Required for emergency vent; blank → use Hexane (86.17) |
+| `latentHeat` | number | kJ/kg | Optional — used in Eq. 14 for ATWS ≥ 260; default: Hexane 334.9 |
+| `relievingTemperature` | number | °C | Optional — used in Eq. 14 for ATWS ≥ 260; default: Hexane 15.6 |
+| `molecularMass` | number | — | Optional — used in Eq. 14 for ATWS ≥ 260; default: Hexane 86.17 |
 
-> **Note:** If latent heat, relieving temp, and molecular mass are left blank, the calculator assumes **Hexane** as the reference liquid, per API 2000.
+> **Note:** For ATWS ≥ 260 m²: if all three properties are left blank the calculator uses the **Hexane simplified formula** (API 2000 Eq. 16/17, result labelled "Hexane"). If any property is provided, the **general formula** (Eq. 14) is used with actual values and Hexane defaults for any missing fields (result labelled "User-defined"). For ATWS < 260 m², Table 7 lookup is used for all fluids.
 
 ### 4.4 Stream Flowrates
 
 Dynamic list of process streams. Users can add/remove rows.
 
-**Incoming streams** (cause inbreathing):
+**Incoming streams** (liquid entering the tank → level rises → cause **outbreathing**):
 
 | Field | Type | Unit |
 |---|---|---|
 | `streamNo` | string | — |
 | `flowrate` | number | m³/h |
 
-**Outgoing streams** (cause outbreathing):
+**Outgoing streams** (liquid leaving the tank → level drops → cause **inbreathing**):
 
 | Field | Type | Unit |
 |---|---|---|
@@ -216,26 +216,29 @@ function calcR_inp(A_TTS: number, A_inp: number, R_in: number): number {
 
 ### 6.1 Normal Venting — Outbreathing
 
-**A. Process Outbreathing (liquid inflow displaces vapor):**
+**A. Process Outbreathing (liquid entering tank displaces vapour):**
 ```
-Q_out_process = Σ (outgoing stream flowrates) [m³/h]
+Q_out_process = Σ (incoming stream flowrates) [m³/h → Nm³/h]
 ```
-Convert to Nm³/h using standard conditions.
 
 **B. Thermal Outbreathing:**
 
-Uses **Y-Factor** from API 2000 lookup table:
+Uses **Y-Factor** from API 2000, selected by latitude band:
 
 | Latitude Range | Y-Factor |
 |---|---|
-| 0° < lat ≤ 42° | Low Y (e.g., 0.32 for <25m³ capacity) |
-| 42° < lat ≤ 58° | Medium Y |
-| 58° < lat ≤ 90° | High Y |
+| 0° < lat ≤ 42° | Low (e.g., 0.32) |
+| 42° < lat ≤ 58° | Medium |
+| 58° < lat ≤ 90° | High |
 
-Y-Factor is interpolated from lookup table keyed on **tank capacity (m³)** (Table 1 of API 2000, 7th Ed.):
-
+**API 5th edition** — tabulated lookup (no Y-factor applied):
 ```
-Thermal_Out = Y × Capacity_Factor × Reduction_Factor [Nm³/h]
+Thermal_Out = Table 7 lookup(V_tk) × Reduction_Factor  [Nm³/h]
+```
+
+**API 6th & 7th edition** — direct formula (Y-factor applied):
+```
+Thermal_Out = Y × V_tk^0.9 × Reduction_Factor  [Nm³/h]
 ```
 
 Where `Reduction_Factor`:
@@ -243,37 +246,47 @@ Where `Reduction_Factor`:
 - Fully insulated: **R_in** = `1 / (1 + (U_i × t) / k)` — see §5 for symbol definitions
 - Partially insulated: **R_inp** = `(A_inp / A_TTS) × R_in + (1 − A_inp / A_TTS)` — API 2000 6th & 7th Ed., Eq. 12 (see §5)
 
-**Flash Point / Boiling Point selection:**
-- FP ≥ 37.8°C or BP ≥ 149°C → use lower Y-factor column
-- FP < 37.8°C or BP < 149°C → use higher Y-factor column
+**Flash Point / Boiling Point selection** (affects C-factor for inbreathing, not Y-factor):
+- FP ≥ 37.8°C or BP ≥ 149°C → low-volatility path (lower C-factor)
+- FP < 37.8°C or BP < 149°C → high-volatility path
 
 **C. Total Normal Outbreathing:**
 ```
 Q_out_total = max(Q_out_process, Thermal_Out)  [API 5th]
-Q_out_total = Q_out_process + Thermal_Out       [API 6th/7th]
+Q_out_total = Q_out_process + Thermal_Out      [API 6th/7th]
 ```
-*(Exact formula depends on selected API edition.)*
 
 ---
 
 ### 6.2 Normal Venting — Inbreathing
 
-**A. Process Inbreathing (liquid outflow draws in air):**
+**A. Process Inbreathing (liquid leaving tank draws in air):**
 ```
-Q_in_process = Σ (incoming stream flowrates) [m³/h → Nm³/h]
+Q_in_process = Σ (outgoing stream flowrates) [m³/h → Nm³/h]
+```
+For API 5th edition, an additional 0.94 factor is applied:
+```
+Q_in_process = 0.94 × Σ (outgoing stream flowrates)  [API 5th only]
 ```
 
 **B. Thermal Inbreathing:**
 
-Uses **C-Factor** from API 2000 lookup table keyed on tank capacity and latitude:
+Uses **C-Factor** from API 2000, selected by latitude band and fluid volatility.
 
+**API 5th edition** — tabulated lookup (no C-factor applied):
 ```
-Thermal_In = C × Capacity_Factor × Reduction_Factor [Nm³/h]
+Thermal_In = Table 7 lookup(V_tk) × Reduction_Factor  [Nm³/h]
+```
+
+**API 6th & 7th edition** — direct formula (C-factor applied):
+```
+Thermal_In = C × V_tk^0.7 × Reduction_Factor  [Nm³/h]
 ```
 
 **C. Total Normal Inbreathing:**
 ```
-Q_in_total = max(Q_in_process, Thermal_In)  or  Q_in_process + Thermal_In
+Q_in_total = max(Q_in_process, Thermal_In)  [API 5th]
+Q_in_total = Q_in_process + Thermal_In      [API 6th/7th]
 ```
 
 ---
@@ -318,16 +331,29 @@ Interpolated from F-factor table based on insulation conductance (W/m²·K) vs t
 
 **Step 3 — Emergency Vent Rate:**
 
+**For ATWS < 260 m² (all fluids):**
 ```
-V_emergency = (906.6 × Q × F) / (1000 × L) × √((T_r + 273.15) / M)   [Nm³/h of air]
+V = F × Table 7 lookup(ATWS)   [Nm³/h]
+```
+
+**For ATWS ≥ 260 m², Hexane-like fluid** (L, T_r, M all left blank — API 2000 Eq. 16/17):
+
+| Design Pressure | Formula |
+|---|---|
+| ≤ 7 kPag | `V = F × 19,910` |
+| > 7 kPag | `V = 208.2 × F × ATWS^0.82` |
+
+**For ATWS ≥ 260 m², user-specified fluid** (any of L, T_r, M provided — API 2000 Eq. 14):
+```
+V = 906.6 × Q × F / (1000 × L) × √((T_r + 273.15) / M)   [Nm³/h]
 ```
 
 Where:
 - `Q` = heat input [W]
-- `F` = environmental factor [dimensionless]
-- `L` = latent heat [kJ/kg], default Hexane = 334.9
-- `T_r` = relieving temperature [°C], default = 15.6
-- `M` = molecular mass, default Hexane = 86.17
+- `F` = environmental factor
+- `L` = latent heat [kJ/kg] (user value, or Hexane default 334.9 if blank)
+- `T_r` = relieving temperature [°C] (user value, or Hexane default 15.6 if blank)
+- `M` = molecular mass (user value, or Hexane default 86.17 if blank)
 
 ---
 
@@ -356,7 +382,8 @@ Capacity breakpoints (m³): 10, 15, 16, 20, 100, 200, 300, 500, 700, 1000, 1500,
 Same keying as Y-Factor table.
 
 ### 7.3 Normal Venting Table
-For API 5th/6th editions — tabulated Nm³/h by tank capacity.
+For **API 5th edition only** — tabulated Nm³/h by tank capacity.
+API 6th and 7th editions use the direct `Y × V_tk^0.9` / `C × V_tk^0.7` formulas instead.
 
 ### 7.4 F-Factor (Environmental Factor) Table
 Keyed by insulation conductance (W/m²·K): 1.9, 2.3, 2.8, 3.8, 5.7, 11.4, 22.7
@@ -645,23 +672,61 @@ Use the following reference case (from the spreadsheet sample inputs) to validat
 | Tank Height (TL-TL) | 17,500 mm |
 | Latitude | 12.7° |
 | Design Pressure | 101.32 kPag |
-| Configuration | Insulated tank - Partial Insulation |
+| Configuration | Bare Metal |
 | Avg Storage Temp | 35°C |
 | Vapour Pressure | 5.6 kPa |
 | API Edition | 7th |
-| Outgoing Flowrate Total | 368.9 m³/h |
+| Outgoing Flowrate Total | 368.9 m³/h (liquid leaving tank → inbreathing) |
 
 **Expected intermediate results:**
 - Max Tank Volume: 7,916.8 m³
-- Surface Area: 1,319.5 m²
-- Wetted Area (emergency): 689.4 m²
-- Emergency Heat Input Q: ~5,741,539 W
-- Environmental Factor F: 1.0 (bare metal baseline)
-- Emergency Vent Required: ~28,452 Nm³/h
+- Shell Surface Area: 1,319.5 m²
+- Wetted Area (ATWS): 689.4 m²
+- Coefficient selection: ATWS=689.4 ≥ 260, DP=101.32 > 7 → **a=43,200, n=0.82**
+- Emergency Heat Input Q: ~9,184,416 W
+- Environmental Factor F: 1.0 (bare metal)
+- Emergency Vent Required: ~44,264 Nm³/h  (208.2 × 1.0 × 689.4^0.82)
+- Y-factor: 0.32 (latitude 12.7° < 42°)
+- C-factor: 6.5 (latitude < 42°, high-volatility, volume > 25 m³)
+- Process outbreathing: 0 Nm³/h (no incoming streams to tank)
+- Process inbreathing: 368.9 Nm³/h (outgoing stream from tank)
 
 ---
 
-## 16. Out of Scope (v1.0)
+## 16. Changelog
+
+### v1.1
+
+**Emergency Venting (`lib/calculations/emergencyVenting.ts`)**
+- Unified coefficient selection: all API editions now use the same ATWS/DP thresholds. Removed the 7th-edition-specific extension of row 3 (a=630,400, n=0.338) to unlimited ATWS.
+- Vent rate now correctly branches by fluid type for ATWS ≥ 260 m²:
+  - **Hexane-like fluid** (L, T_r, M all blank): simplified formula (API 2000 Eq. 16/17)
+    - DP ≤ 7: `F × 19,910 Nm³/h`
+    - DP > 7: `208.2 × F × ATWS^0.82`
+  - **User-defined fluid** (any of L, T_r, M provided): general formula (API 2000 Eq. 14)
+    - `906.6 × Q × F / (1000 × L) × √((T_r + 273.15) / M)`, using Hexane defaults for any missing values
+  - ATWS < 260 m²: Table 7 lookup for all fluids (unchanged)
+
+**Normal Venting (`lib/calculations/normalVenting.ts`)**
+- **Critical fix:** Corrected stream-to-direction mapping (tank perspective):
+  - `incomingStreams` (to tank) → outbreathing
+  - `outgoingStreams` (from tank) → inbreathing
+- **5th edition:** 0.94 factor now correctly applied to outgoing streams (inbreathing), not incoming.
+- **6th edition:** Now applies Y-factor and C-factor (same as 7th edition), replacing the previous Y=1/C=1 placeholder.
+- **6th & 7th edition thermal formula:** Changed from `Y × tableValue × R` to direct `Y × V_tk^0.9 × R` (outbreathing) and `C × V_tk^0.7 × R` (inbreathing). The normal vent table is now only used for the 5th edition path.
+
+**Validation (`lib/validation/inputSchema.ts`)**
+- Added NaN-tolerant optional helpers (`nanOptionalPositive`, `nanOptional`, `nanOptionalNonneg`) to correctly handle empty number inputs from React Hook Form's `valueAsNumber`.
+- `streamNo` validation relaxed (no longer requires non-empty string).
+- `description` added to stream schema.
+
+**Calculation Hook (`lib/hooks/useCalculation.ts`)**
+- Added lightweight `geometrySchema` for the immediate client-side layer, allowing the Derived Geometry panel to update as soon as tank dimensions are valid — without waiting for fluid properties.
+- Added `setError(null)` in the debounced path when the form is incomplete, clearing stale error banners.
+
+---
+
+## 17. Out of Scope (v1.0)
 
 - Multi-tank comparison
 - User accounts / saved calculations
