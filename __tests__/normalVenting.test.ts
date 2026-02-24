@@ -88,7 +88,7 @@ describe("computeNormalVenting — 7th edition", () => {
     expect(r.inbreathing.processFlowrate).toBeCloseTo(300, 8)
   })
 
-  it("multiple incoming streams (to tank): sums all flowrates for outbreathing", () => {
+  it("multiple incoming streams (to tank): applies VP multiplier to summed flow for outbreathing", () => {
     const input = makeInput({
       incomingStreams: [
         { streamNo: "S-3", flowrate: 50 },
@@ -96,7 +96,26 @@ describe("computeNormalVenting — 7th edition", () => {
       ],
     })
     const r = computeNormalVenting(input, REF_DERIVED)
-    expect(r.outbreathing.processFlowrate).toBeCloseTo(125, 8)
+    // REF_INPUT vapourPressure is 5.6 kPa(a) -> volatile -> 2.0 x incoming total
+    expect(r.outbreathing.processFlowrate).toBeCloseTo(250, 8)
+  })
+
+  it("vapour pressure threshold: <= 5.0 kPa(a) uses 1.0 x incoming total", () => {
+    const input = makeInput({
+      vapourPressure: 5.0,
+      incomingStreams: [{ streamNo: "S-7", flowrate: 150 }],
+    })
+    const r = computeNormalVenting(input, REF_DERIVED)
+    expect(r.outbreathing.processFlowrate).toBeCloseTo(150, 8)
+  })
+
+  it("vapour pressure above threshold: > 5.0 kPa(a) uses 2.0 x incoming total", () => {
+    const input = makeInput({
+      vapourPressure: 5.1,
+      incomingStreams: [{ streamNo: "S-8", flowrate: 150 }],
+    })
+    const r = computeNormalVenting(input, REF_DERIVED)
+    expect(r.outbreathing.processFlowrate).toBeCloseTo(300, 8)
   })
 
   it("low-volatility fluid: uses lower Y-factor column (same formula)", () => {
@@ -133,6 +152,15 @@ describe("computeNormalVenting — 7th edition", () => {
 
 describe("computeNormalVenting — 6th edition", () => {
   const input6 = makeInput({ apiEdition: "6TH" })
+
+  it("process outbreathing (6th): 1.0 × sum of incoming flowrates", () => {
+    const inputWithIn = makeInput({
+      apiEdition: "6TH",
+      incomingStreams: [{ streamNo: "S-9", flowrate: 123.4 }],
+    })
+    const r = computeNormalVenting(inputWithIn, REF_DERIVED)
+    expect(r.outbreathing.processFlowrate).toBeCloseTo(123.4, 8)
+  })
 
   it("yFactor and cFactor are applied (same as 7th ed)", () => {
     const r = computeNormalVenting(input6, REF_DERIVED)
@@ -188,14 +216,40 @@ describe("computeNormalVenting — 5th edition", () => {
     expect(r.inbreathing.processFlowrate).toBeCloseTo(0.94 * 200, 8)
   })
 
-  it("process outbreathing = sum of incoming (to tank) flowrates (no 0.94)", () => {
+  it("process outbreathing (5th, FP>=37.8): 1.01 × sum of incoming flowrates", () => {
     const inputWithIn = makeInput({
       apiEdition: "5TH",
+      flashBoilingPointType: "FP",
+      flashBoilingPoint: 37.8,
       incomingStreams: [{ streamNo: "S-2", flowrate: 100 }],
       outgoingStreams: [],
     })
     const r = computeNormalVenting(inputWithIn, REF_DERIVED)
-    expect(r.outbreathing.processFlowrate).toBeCloseTo(100, 5)
+    expect(r.outbreathing.processFlowrate).toBeCloseTo(101, 5)
+  })
+
+  it("process outbreathing (5th, BP>=149): 1.01 × sum of incoming flowrates", () => {
+    const inputWithIn = makeInput({
+      apiEdition: "5TH",
+      flashBoilingPointType: "BP",
+      flashBoilingPoint: 149,
+      incomingStreams: [{ streamNo: "S-2", flowrate: 100 }],
+      outgoingStreams: [],
+    })
+    const r = computeNormalVenting(inputWithIn, REF_DERIVED)
+    expect(r.outbreathing.processFlowrate).toBeCloseTo(101, 5)
+  })
+
+  it("process outbreathing (5th, FP<37.8): 2.02 × sum of incoming flowrates", () => {
+    const inputWithIn = makeInput({
+      apiEdition: "5TH",
+      flashBoilingPointType: "FP",
+      flashBoilingPoint: 37.7,
+      incomingStreams: [{ streamNo: "S-2", flowrate: 100 }],
+      outgoingStreams: [],
+    })
+    const r = computeNormalVenting(inputWithIn, REF_DERIVED)
+    expect(r.outbreathing.processFlowrate).toBeCloseTo(202, 5)
   })
 
   it("total = max(process, thermal) for outbreathing", () => {

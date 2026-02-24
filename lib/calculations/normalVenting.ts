@@ -21,9 +21,10 @@ function sumFlowrates(streams: readonly { flowrate: number }[]): number {
  *                      = tank level drops → air drawn in → INBREATHING
  *
  * API edition differences:
- *   5th  – process inbreathing × 0.94; total = max(process, thermal)
- *   6th  – no 0.94 factor; total = process + thermal; Y/C × V_tk^n formula
- *   7th  – no 0.94 factor; total = process + thermal; Y/C × V_tk^n formula
+ *   5th  – process inbreathing × 0.94; process outbreathing uses FP/BP factor
+ *          (FP >= 37.8 C or BP >= 149 C: 1.01x; FP < 37.8 C or BP < 149 C: 2.02x); total = max(process, thermal)
+ *   6th  – process outbreathing = incoming × 1.0; process inbreathing has no 0.94 factor; total = process + thermal
+ *   7th  – process outbreathing uses vapour-pressure factor (<= 5.0 kPa(a): 1.0x, > 5.0 kPa(a): 2.0x); total = process + thermal
  *
  * Reduction factor R is applied to thermal venting for all editions.
  */
@@ -54,7 +55,10 @@ export function computeNormalVenting(
   if (apiEdition === "5TH") {
     // Process inbreathing is multiplied by 0.94 per API 5th
     const processInbreathing = 0.94 * outgoingTotal
-    const processOutbreathing = incomingTotal
+    // 5th edition process outbreathing from incoming liquid stream:
+    //   FP >= 37.8 C or BP >= 149 C -> 1.01 x incoming total
+    //   FP < 37.8 C or BP < 149 C   -> 2.02 x incoming total
+    const processOutbreathing = (lowVol ? 1.01 : 2.02) * incomingTotal
     const thermalIn = tableIn * reductionFactor
     const thermalOut = tableOut * reductionFactor
 
@@ -81,7 +85,7 @@ export function computeNormalVenting(
   // Total = process + thermal
   if (apiEdition === "6TH") {
     const processInbreathing = outgoingTotal
-    const processOutbreathing = incomingTotal
+    const processOutbreathing = 1.0 * incomingTotal
 
     const yFactor = getYFactor(latitude)
     const cFactor = getCFactor(latitude, flashBoilingPointType, flashBoilingPoint, maxTankVolume)
@@ -112,7 +116,10 @@ export function computeNormalVenting(
   //   Thermal outbreathing = Y × V_tk^0.9 × R
   //   Thermal inbreathing  = C × V_tk^0.7 × R
   const processInbreathing = outgoingTotal
-  const processOutbreathing = incomingTotal
+  // 7th edition process outbreathing from incoming liquid stream:
+  //   non-volatile (vapour pressure <= 5.0 kPa(a)) -> 1.0 x incoming total
+  //   volatile (vapour pressure > 5.0 kPa(a))      -> 2.0 x incoming total
+  const processOutbreathing = (input.vapourPressure > 5.0 ? 2.0 : 1.0) * incomingTotal
 
   const yFactor = getYFactor(latitude)
   const cFactor = getCFactor(latitude, flashBoilingPointType, flashBoilingPoint, maxTankVolume)
