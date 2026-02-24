@@ -105,21 +105,26 @@ describe("calculationInputSchema", () => {
     expect(errors[0]).toMatch(/103\.4 kPag/)
   })
 
-  it("rejects designPressure = 0", () => {
+  it("accepts designPressure = 0 (vacuum)", () => {
     const data = { ...VALID_BASE, designPressure: 0 }
-    expect(pathErrors(data, "designPressure")).toHaveLength(1)
+    expect(pathErrors(data, "designPressure")).toHaveLength(0)
   })
 
-  it("rejects negative designPressure", () => {
-    const data = { ...VALID_BASE, designPressure: -1 }
+  it("accepts designPressure = -101.3 (full vacuum boundary)", () => {
+    const data = { ...VALID_BASE, designPressure: -101.3 }
+    expect(pathErrors(data, "designPressure")).toHaveLength(0)
+  })
+
+  it("rejects designPressure below -101.3 kPag", () => {
+    const data = { ...VALID_BASE, designPressure: -101.4 }
     expect(pathErrors(data, "designPressure")).toHaveLength(1)
   })
 
   // ── Latitude ──────────────────────────────────────────────────────────────
 
-  it("rejects latitude = 0", () => {
+  it("accepts latitude = 0 (equator)", () => {
     const data = { ...VALID_BASE, latitude: 0 }
-    expect(pathErrors(data, "latitude")).toHaveLength(1)
+    expect(pathErrors(data, "latitude")).toHaveLength(0)
   })
 
   it("rejects latitude > 90", () => {

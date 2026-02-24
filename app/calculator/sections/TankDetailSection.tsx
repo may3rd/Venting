@@ -85,7 +85,7 @@ export function TankDetailSection() {
           unit="°"
           required
           error={errors.latitude?.message}
-          hint="(0°, 90°] — for thermal factors"
+          hint="[0°, 90°] — for thermal factors"
         >
           <Input
             id="latitude"
@@ -101,7 +101,7 @@ export function TankDetailSection() {
           unit="kPag"
           required
           error={errors.designPressure?.message}
-          hint="Max 103.4 kPag"
+          hint="-101.3 to 103.4 kPag"
         >
           <Input
             id="designPressure"

@@ -238,13 +238,13 @@ export function CalculationReport({ input, result }: ReportProps) {
         </Text>
         <KV label="Process Outbreathing"      value={normalVenting.outbreathing.processFlowrate.toFixed(2)} unit="Nm³/h" />
         <KV label="Thermal Outbreathing"      value={normalVenting.outbreathing.thermalOutbreathing.toFixed(2)} unit="Nm³/h" />
-        {result.apiEdition === "7TH" && (
+        {(result.apiEdition === "6TH" || result.apiEdition === "7TH") && (
           <KV label="  Y-factor"              value={normalVenting.outbreathing.yFactor} />
         )}
         <KV label="Total Outbreathing"        value={normalVenting.outbreathing.total.toFixed(2)} unit="Nm³/h" />
         <KV label="Process Inbreathing"       value={normalVenting.inbreathing.processFlowrate.toFixed(2)} unit="Nm³/h" />
         <KV label="Thermal Inbreathing"       value={normalVenting.inbreathing.thermalInbreathing.toFixed(2)} unit="Nm³/h" />
-        {result.apiEdition === "7TH" && (
+        {(result.apiEdition === "6TH" || result.apiEdition === "7TH") && (
           <KV label="  C-factor"              value={normalVenting.inbreathing.cFactor} />
         )}
         <KV label="Total Inbreathing"         value={normalVenting.inbreathing.total.toFixed(2)} unit="Nm³/h" />

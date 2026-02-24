@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import type { CalculationInput } from "@/types"
-import { HEXANE_DEFAULTS } from "@/lib/constants"
+import { HEXANE_DEFAULTS, FLASH_POINT_THRESHOLD, BOILING_POINT_THRESHOLD } from "@/lib/constants"
 import { SectionCard } from "../components/SectionCard"
 import { FieldRow } from "../components/FieldRow"
 
@@ -24,6 +24,13 @@ export function FluidPropertiesSection() {
   } = useFormContext<CalculationInput>()
 
   const fpType = watch("flashBoilingPointType")
+  const flashBPValue = watch("flashBoilingPoint")
+  const hasFlashBP = flashBPValue !== undefined && !Number.isNaN(flashBPValue)
+  const isLowVol =
+    hasFlashBP &&
+    (fpType === "FP"
+      ? flashBPValue! >= FLASH_POINT_THRESHOLD
+      : flashBPValue! >= BOILING_POINT_THRESHOLD)
 
   return (
     <SectionCard title="Fluid Properties">
@@ -91,9 +98,13 @@ export function FluidPropertiesSection() {
           unit="°C"
           error={errors.flashBoilingPoint?.message}
           hint={
-            fpType === "FP"
-              ? "Low volatility if FP ≥ 37.8°C"
-              : "Low volatility if BP ≥ 149°C"
+            !hasFlashBP
+              ? (fpType === "FP"
+                  ? "Blank → high-volatility assumed; low volatility if FP ≥ 37.8°C"
+                  : "Blank → high-volatility assumed; low volatility if BP ≥ 149°C")
+              : isLowVol
+                  ? (fpType === "FP" ? "Low volatility (FP ≥ 37.8°C)" : "Low volatility (BP ≥ 149°C)")
+                  : (fpType === "FP" ? "High volatility (FP < 37.8°C)" : "High volatility (BP < 149°C)")
           }
         >
           <Input

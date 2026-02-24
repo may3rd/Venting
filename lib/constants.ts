@@ -17,7 +17,11 @@ export const BOILING_POINT_THRESHOLD = 149 // °C — BP ≥ this → "low volat
 
 // ─── Design Limits ────────────────────────────────────────────────────────────
 
-export const MAX_DESIGN_PRESSURE_KPAG = 103.4 // kPag — error if exceeded
+export const MIN_DESIGN_PRESSURE_KPAG = -101.3 // kPag — full vacuum lower bound
+export const MAX_DESIGN_PRESSURE_KPAG = 103.4  // kPag — error if exceeded
+
+/** Pressure threshold separating Hexane Eq. 16 (DP > 7) from Eq. 17 (DP ≤ 7) in API 2000 §6.3 */
+export const EMERGENCY_VENT_PRESSURE_THRESHOLD = 7 // kPag
 export const CAPACITY_WARNING_M3 = 30_000 // m³ — warn if exceeded (outside table)
 export const WETTED_AREA_HEIGHT_CAP_MM = 9_144 // mm (30 ft) — cap for wetted area calc
 

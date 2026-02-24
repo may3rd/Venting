@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { TankConfiguration } from "@/types"
-import { MAX_DESIGN_PRESSURE_KPAG } from "@/lib/constants"
+import { MAX_DESIGN_PRESSURE_KPAG, MIN_DESIGN_PRESSURE_KPAG } from "@/lib/constants"
 
 // ─── NaN-tolerant optional helpers ────────────────────────────────────────────
 // Empty number inputs with `valueAsNumber` produce NaN. These helpers coerce
@@ -54,18 +54,22 @@ export const calculationInputSchema = z
       .positive("Height must be > 0"),
     latitude: z
       .number({ error: "Latitude must be a number" })
-      .gt(0, "Latitude must be > 0°")
+      .gte(0, "Latitude must be ≥ 0°")
       .lte(90, "Latitude must be ≤ 90°"),
     designPressure: z
       .number({ error: "Design pressure must be a number" })
-      .positive("Design pressure must be > 0"),
+      .gte(MIN_DESIGN_PRESSURE_KPAG, `Design pressure must be ≥ ${MIN_DESIGN_PRESSURE_KPAG} kPag`),
 
     // Configuration
     tankConfiguration: z.nativeEnum(TankConfiguration, {
       error: "Invalid tank configuration",
     }),
     insulationThickness: nanOptionalPositive,
-    insulationConductivity: nanOptionalPositive,
+    insulationConductivity: z
+      .number()
+      .min(0.001, "Conductivity must be ≥ 0.001 W/m·K")
+      .optional()
+      .or(z.nan().transform(() => undefined)),
     insideHeatTransferCoeff: nanOptionalPositive,
     insulatedSurfaceArea: nanOptionalNonneg,
 

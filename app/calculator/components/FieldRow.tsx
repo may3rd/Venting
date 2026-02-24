@@ -35,7 +35,7 @@ export function FieldRow({
       <div className="flex items-center gap-2">
         <div className="flex-1">{children}</div>
         {unit && (
-          <span className="text-xs text-muted-foreground whitespace-nowrap min-w-[3rem] text-right">
+          <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
             {unit}
           </span>
         )}

@@ -1,5 +1,5 @@
 import { CalculationInput, DerivedGeometry, EmergencyVentingResult } from "@/types"
-import { HEXANE_DEFAULTS } from "@/lib/constants"
+import { HEXANE_DEFAULTS, EMERGENCY_VENT_PRESSURE_THRESHOLD } from "@/lib/constants"
 import { getEnvironmentalFactor } from "@/lib/lookups/fFactor"
 import { emergencyVentTableLookup } from "@/lib/lookups/emergencyVentTable"
 
@@ -17,7 +17,7 @@ function selectCoefficients(
   if (wettedAreaM2 < 260) return { a: 630_400, n: 0.338 }
 
   // ATWS ≥ 260
-  return designPressure > 7
+  return designPressure > EMERGENCY_VENT_PRESSURE_THRESHOLD
     ? { a: 43_200, n: 0.82 }
     : { a: 4_129_700, n: 0 }
 }
@@ -84,7 +84,7 @@ export function computeEmergencyVenting(
     // User-specified fluid → general formula (API 2000 Eq. 14)
     // V = 906.6 × Q × F / (1000 × L) × √((T_r + 273.15) / M)
     emergencyVentRequired = (906.6 * Q * F) / (1000 * L) * Math.sqrt((T_r + 273.15) / M)
-  } else if (designPressure <= 7) {
+  } else if (designPressure <= EMERGENCY_VENT_PRESSURE_THRESHOLD) {
     // Hexane, ATWS ≥ 260, DP ≤ 7 → simplified fixed value (API 2000 Eq. 17)
     emergencyVentRequired = F * 19_910
   } else {

@@ -216,4 +216,24 @@ describe("user-specified fluid properties", () => {
     expect(rPartial.referenceFluid).toBe("User-defined")
     expect(rPartial.emergencyVentRequired).toBeGreaterThan(0)
   })
+
+  it("user-defined fluid at ATWS < 260 uses table lookup, not Eq. 14", () => {
+    // D=10000mm, H=5000mm → ATWS = π×10×5 ≈ 157.08 m² < 260
+    // Even though latentHeat makes this User-defined, the ATWS < 260 branch takes priority
+    const input = makeInput({ diameter: 10_000, height: 5_000, latentHeat: 600 })
+    const derived = makeDerived(input)
+    const r = computeEmergencyVenting(input, derived)
+
+    // Table path cap: max table value is 19,910 Nm³/h at 260 m²
+    expect(r.emergencyVentRequired).toBeGreaterThan(0)
+    expect(r.emergencyVentRequired).toBeLessThanOrEqual(19_910)
+
+    // Cross-check: Hexane at same geometry should give identical result
+    // (table path is fluid-independent — F × table(ATWS) regardless of fluid)
+    const rHexane = computeEmergencyVenting(
+      { ...input, latentHeat: undefined },
+      derived,
+    )
+    expect(r.emergencyVentRequired).toBeCloseTo(rHexane.emergencyVentRequired, 5)
+  })
 })
