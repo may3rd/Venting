@@ -180,7 +180,7 @@ export function CalculationReport({ input, result }: ReportProps) {
         )}
         {warnings.undergroundTank && (
           <View style={s.warning}>
-            <Text>ℹ  Underground tank — environmental factor F = 0, emergency vent = 0.</Text>
+            <Text>ℹ  Underground tank — environmental factor F = 0.</Text>
           </View>
         )}
         {warnings.hexaneDefaults && (

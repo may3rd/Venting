@@ -53,7 +53,7 @@ export function ResultsPanel() {
                 )}
                 {calculationResult.warnings.undergroundTank && (
                   <WarningBanner color="blue">
-                    Underground tank — environmental factor F = 0, emergency vent = 0
+                    Underground tank — environmental factor F = 0
                   </WarningBanner>
                 )}
                 {calculationResult.warnings.hexaneDefaults && (
@@ -99,7 +99,10 @@ export function ResultsPanel() {
               </Badge>
             }
           >
-            <EmergencyVentingResult result={calculationResult.emergencyVenting} />
+            <EmergencyVentingResult
+              result={calculationResult.emergencyVenting}
+              apiEdition={calculationResult.apiEdition}
+            />
           </SectionCard>
         </>
       )}

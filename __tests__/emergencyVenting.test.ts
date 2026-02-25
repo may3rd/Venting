@@ -181,13 +181,36 @@ describe("5th/6th edition table path (ATWS ≤ 260)", () => {
 
 describe("user-specified fluid properties", () => {
   // REF_INPUT has ATWS=689.44 > 260 and DP=101.32 > 7, so ATWS ≥ 260, DP > 7 path applies.
-  // Hexane → 208.2 simplified; user-defined → 906.6 general formula.
+  // Hexane → 208.2 simplified; user-defined → edition-specific general formula.
 
   it("Hexane (no props) uses simplified formula; user-defined uses general formula (different result)", () => {
     const rHexane = computeEmergencyVenting(REF_INPUT, REF_DERIVED)
     const rUser = computeEmergencyVenting(makeInput({ latentHeat: 600 }), REF_DERIVED)
     // Different formulas → different results
     expect(rUser.emergencyVentRequired).not.toBeCloseTo(rHexane.emergencyVentRequired, 0)
+  })
+
+  it("user-defined fluid: 5th edition uses lower coefficient than 6th/7th", () => {
+    const inputUser5 = makeInput({ apiEdition: "5TH", latentHeat: 600 })
+    const inputUser6 = makeInput({ apiEdition: "6TH", latentHeat: 600 })
+    const inputUser7 = makeInput({ apiEdition: "7TH", latentHeat: 600 })
+
+    const r5 = computeEmergencyVenting(inputUser5, REF_DERIVED)
+    const r6 = computeEmergencyVenting(inputUser6, REF_DERIVED)
+    const r7 = computeEmergencyVenting(inputUser7, REF_DERIVED)
+
+    // Coefficients: 5th=881.55, 6th/7th=906.6
+    expect(r5.emergencyVentRequired).toBeLessThan(r6.emergencyVentRequired)
+    expect(r6.emergencyVentRequired).toBeCloseTo(r7.emergencyVentRequired, 8)
+  })
+
+  it("user-defined fluid: 5th/6th ratio follows 881.55/906.6 coefficient ratio", () => {
+    const inputUser5 = makeInput({ apiEdition: "5TH", latentHeat: 600, relievingTemperature: 40, molecularMass: 90 })
+    const inputUser6 = { ...inputUser5, apiEdition: "6TH" as const }
+    const r5 = computeEmergencyVenting(inputUser5, REF_DERIVED)
+    const r6 = computeEmergencyVenting(inputUser6, REF_DERIVED)
+
+    expect(r5.emergencyVentRequired / r6.emergencyVentRequired).toBeCloseTo(881.55 / 906.6, 8)
   })
 
   it("higher latent heat → lower vent required (less vapour per unit heat)", () => {
@@ -217,23 +240,32 @@ describe("user-specified fluid properties", () => {
     expect(rPartial.emergencyVentRequired).toBeGreaterThan(0)
   })
 
-  it("user-defined fluid at ATWS < 260 uses table lookup, not Eq. 14", () => {
+  it("user-defined fluid at ATWS < 260 uses Eq. 14 (not table lookup)", () => {
     // D=10000mm, H=5000mm → ATWS = π×10×5 ≈ 157.08 m² < 260
-    // Even though latentHeat makes this User-defined, the ATWS < 260 branch takes priority
     const input = makeInput({ diameter: 10_000, height: 5_000, latentHeat: 600 })
     const derived = makeDerived(input)
     const r = computeEmergencyVenting(input, derived)
 
-    // Table path cap: max table value is 19,910 Nm³/h at 260 m²
-    expect(r.emergencyVentRequired).toBeGreaterThan(0)
-    expect(r.emergencyVentRequired).toBeLessThanOrEqual(19_910)
+    // For apiEdition=7TH, Eq. 14 coefficient = 906.6.
+    const expected = (906.6 * r.heatInput * r.environmentalFactor) / (1000 * 600)
+      * Math.sqrt((15.6 + 273.15) / 86.17)
+    expect(r.emergencyVentRequired).toBeCloseTo(expected, 8)
 
-    // Cross-check: Hexane at same geometry should give identical result
-    // (table path is fluid-independent — F × table(ATWS) regardless of fluid)
+    // Cross-check: Hexane-like fluid at same geometry uses table path and differs.
     const rHexane = computeEmergencyVenting(
       { ...input, latentHeat: undefined },
       derived,
     )
-    expect(r.emergencyVentRequired).toBeCloseTo(rHexane.emergencyVentRequired, 5)
+    expect(r.emergencyVentRequired).not.toBeCloseTo(rHexane.emergencyVentRequired, 5)
+  })
+
+  it("ATWS >= 260 and DP <= 7 gives fixed 19,910 (not scaled by F)", () => {
+    const input = makeInput({
+      designPressure: 5,
+      tankConfiguration: TankConfiguration.IMPOUNDMENT, // F = 0.5
+    })
+    const r = computeEmergencyVenting(input, REF_DERIVED)
+    expect(r.environmentalFactor).toBeCloseTo(0.5, 8)
+    expect(r.emergencyVentRequired).toBeCloseTo(19_910, 8)
   })
 })

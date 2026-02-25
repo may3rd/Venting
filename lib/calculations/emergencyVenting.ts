@@ -32,12 +32,13 @@ function selectCoefficients(
  *   2. Q = a × ATWS^n  (W)
  *   3. F = environmental factor (from tank configuration / insulation)
  *   4. Vent rate:
- *        ATWS < 260          → V = F × Table 7 lookup  (all fluids)
- *        ATWS ≥ 260, Hexane  → V = simplified formula (API 2000 Eq. 16 / 17)
- *                                  DP ≤ 7: F × 19,910
- *                                  DP > 7: 208.2 × F × ATWS^0.82
- *        ATWS ≥ 260, user fluid → V = general formula (API 2000 Eq. 14)
- *                                  906.6 × Q × F / (1000 × L) × √((T_r+273.15)/M)
+ *        Hexane-like fluid:
+ *          ATWS < 260         → V = F × Table 7 lookup
+ *          ATWS ≥ 260, DP ≤ 7 → V = 19,910
+ *          ATWS ≥ 260, DP > 7 → V = 208.2 × F × ATWS^0.82
+ *        User-defined fluid (all ATWS):
+ *          5th                → V = 881.55 × Q × F / (1000 × L) × √((T_r+273.15)/M)
+ *          6th/7th            → V = 906.6  × Q × F / (1000 × L) × √((T_r+273.15)/M)
  *
  * Hexane defaults are used when L / T_r / M are not provided (per API 2000).
  * For user-defined fluids, actual values are used; Hexane defaults fill any gaps.
@@ -47,6 +48,7 @@ export function computeEmergencyVenting(
   derived: DerivedGeometry,
 ): EmergencyVentingResult {
   const {
+    apiEdition,
     designPressure,
     latentHeat,
     relievingTemperature,
@@ -77,18 +79,20 @@ export function computeEmergencyVenting(
 
   // Emergency vent rate
   let emergencyVentRequired: number
-  if (wettedArea < 260) {
-    // ATWS < 260 → Table 7 lookup (pre-calculated for Hexane, F=1), scaled by F
+  if (referenceFluid === "User-defined") {
+    // User-defined fluid (all ATWS) → general formula (API 2000 Eq. 14)
+    // 5th: V = 881.55 × Q × F / (1000 × L) × √((T_r + 273.15) / M)
+    // 6th/7th: V = 906.6 × Q × F / (1000 × L) × √((T_r + 273.15) / M)
+    const coefficient = apiEdition === "5TH" ? 881.55 : 906.6
+    emergencyVentRequired = (coefficient * Q * F) / (1000 * L) * Math.sqrt((T_r + 273.15) / M)
+  } else if (wettedArea < 260) {
+    // Hexane-like fluid, ATWS < 260 → Table 7 lookup (pre-calculated for Hexane, F=1), scaled by F
     emergencyVentRequired = F * emergencyVentTableLookup(wettedArea)
-  } else if (referenceFluid === "User-defined") {
-    // User-specified fluid → general formula (API 2000 Eq. 14)
-    // V = 906.6 × Q × F / (1000 × L) × √((T_r + 273.15) / M)
-    emergencyVentRequired = (906.6 * Q * F) / (1000 * L) * Math.sqrt((T_r + 273.15) / M)
   } else if (designPressure <= EMERGENCY_VENT_PRESSURE_THRESHOLD) {
-    // Hexane, ATWS ≥ 260, DP ≤ 7 → simplified fixed value (API 2000 Eq. 17)
-    emergencyVentRequired = F * 19_910
+    // Hexane-like fluid, ATWS ≥ 260, DP ≤ 7 → fixed value
+    emergencyVentRequired = 19_910
   } else {
-    // Hexane, ATWS ≥ 260, DP > 7 → simplified formula (API 2000 Eq. 16)
+    // Hexane-like fluid, ATWS ≥ 260, DP > 7 → simplified formula (API 2000 Eq. 16)
     // V = 208.2 × F × ATWS^0.82
     emergencyVentRequired = 208.2 * F * Math.pow(wettedArea, 0.82)
   }
